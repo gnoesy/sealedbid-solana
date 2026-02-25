@@ -54,6 +54,8 @@ Confidential Layer (Arcium MXE):
 
 Arcium acts as the confidential execution environment.
 
+![SealedBid Architecture](architecture.png)
+
 ---
 
 ## 🔄 Execution Flow
