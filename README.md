@@ -113,3 +113,6 @@ This demonstrates how confidential execution can enable fair price discovery.
 ## 🖥 Dashboard Mock
 
 A simple UI mock is included at: `app/index.html`
+## 🖥 SealedBid Dashboard Preview
+
+![SealedBid Dashboard](sealedbid-dashboard-preview.png)
