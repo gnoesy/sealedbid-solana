@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SealedBid — Blind Auction (Arcium + Solana)</title>
+  <style>
+    :root{
+      --bg:#070712;
+      --panel:#0d0d1a;
+      --line:#23233f;
+      --text:#eaeaf6;
+      --muted:#a7a7c6;
+      --accent:#8b5cff;   /* Arcium-ish purple */
+      --accent2:#37e0ff;
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --shadow: 0 18px 45px rgba(0,0,0,.55);
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:var(--sans);
+      background:
+        radial-gradient(900px 500px at 25% -10%, rgba(139,92,255,.25), transparent 60%),
+        radial-gradient(800px 500px at 85% 10%, rgba(55,224,255,.18), transparent 55%),
+        linear-gradient(180deg, #05050d 0%, var(--bg) 60%, #05050d 100%);
+      color:var(--text);
+    }
+    .wrap{max-width:1100px;margin:0 auto;padding:28px 18px 60px;}
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 16px;border:1px solid var(--line);background:rgba(13,13,26,.7);
+      border-radius:18px;box-shadow:var(--shadow);backdrop-filter: blur(10px);
+    }
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{
+      width:34px;height:34px;border-radius:10px;
+      background:linear-gradient(135deg, rgba(139,92,255,.9), rgba(55,224,255,.7));
+      box-shadow:0 0 0 1px rgba(255,255,255,.06) inset, 0 10px 30px rgba(139,92,255,.22);
+    }
+    .title{display:flex;flex-direction:column;line-height:1.1}
+    .title b{font-size:15px}
+    .title span{font-size:12px;color:var(--muted)}
+    .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .pill{
+      font-size:12px;color:var(--muted);
+      border:1px solid var(--line);
+      background:rgba(10,10,20,.7);
+      padding:8px 10px;border-radius:999px
+    }
+    .pill strong{color:var(--text);font-weight:600}
+    .pill.mono{font-family:var(--mono)}
+    .grid{
+      margin-top:16px;
+      display:grid;gap:14px;
+      grid-template-columns: 1.1fr 1.1fr 0.9fr;
+    }
+    .card{
+      border:1px solid var(--line);
+      background:rgba(13,13,26,.65);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:16px;
+      backdrop-filter: blur(10px);
+      min-height: 170px;
+    }
+    .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.2px}
+    .muted{color:var(--muted);font-size:12px}
+    .row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:10px 0}
+    input, select{
+      width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
+      background:rgba(8,8,16,.65);color:var(--text);outline:none;
+    }
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:12px 12px;border-radius:12px;border:1px solid var(--line);
+      background:linear-gradient(135deg, rgba(139,92,255,.95), rgba(90,70,255,.85));
+      color:white;font-weight:800;font-size:13px;cursor:pointer;
+      box-shadow:0 14px 30px rgba(139,92,255,.25);
+      text-decoration:none;
+      width:100%;
+    }
+    .btn.secondary{
+      background:rgba(10,10,20,.55);
+      box-shadow:none;color:var(--text);font-weight:700;
+    }
+    .tag{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:5px 8px;border-radius:999px;border:1px solid var(--line);
+      font-size:11px;color:var(--muted);background:rgba(8,8,16,.55)
+    }
+    .tag b{color:var(--text)}
+    .kpi{
+      display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px
+    }
+    .kpi .box{
+      padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(8,8,16,.55)
+    }
+    .kpi .box b{display:block;font-size:14px}
+    .kpi .box span{display:block;margin-top:2px;font-size:12px;color:var(--muted)}
+    .statusline{
+      margin-top:12px;border-top:1px solid var(--line);padding-top:12px;
+      display:flex;gap:10px;align-items:center;justify-content:space-between
+    }
+    .dot{width:10px;height:10px;border-radius:999px;background:var(--ok);box-shadow:0 0 0 4px rgba(34,197,94,.12)}
+    .dot.warn{background:var(--warn);box-shadow:0 0 0 4px rgba(245,158,11,.12)}
+    .dot.bad{background:var(--bad);box-shadow:0 0 0 4px rgba(239,68,68,.12)}
+    .mini{font-family:var(--mono);font-size:12px;color:var(--muted)}
+    .table{
+      margin-top:12px;border:1px solid var(--line);border-radius:14px;overflow:hidden
+    }
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--line)}
+    th{color:var(--muted);text-align:left;background:rgba(8,8,16,.65)}
+    td{color:var(--text)}
+    .foot{
+      margin-top:14px;
+      border:1px dashed rgba(139,92,255,.35);
+      background:rgba(13,13,26,.35);
+      border-radius:16px;padding:14px;
+      color:var(--muted);font-size:12px
+    }
+    .foot strong{color:var(--text)}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr} .btn{width:100%} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="title">
+          <b>SealedBid</b>
+          <span>Blind Auction MVP · encrypted compute via Arcium</span>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="pill"><strong>Auction #12</strong></div>
+        <div class="pill">Item: <strong>NFT #481</strong></div>
+        <div class="pill"><strong>Devnet</strong></div>
+        <div class="pill mono">wallet: 7x…9n2b</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: Auction Status -->
+      <div class="card">
+        <h3>Auction Status</h3>
+        <div class="row">
+          <div>
+            <div style="font-size:22px;font-weight:900">Open</div>
+            <div class="muted">Bids are encrypted and stored on-chain as opaque blobs.</div>
+          </div>
+          <span class="tag"><b>sealed</b> bidding</span>
+        </div>
+
+        <div class="kpi">
+          <div class="box">
+            <b>Bids Received</b>
+            <span class="mini">128 (mock)</span>
+          </div>
+          <div class="box">
+            <b>Time Remaining</b>
+            <span class="mini">00:12:41</span>
+          </div>
+        </div>
+
+        <div class="statusline">
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="dot"></span>
+            <div>
+              <div style="font-size:12px">Public chain can’t see bid values</div>
+              <div class="mini">only encrypted blobs are stored</div>
+            </div>
+          </div>
+          <span class="mini">MEV surface ↓</span>
+        </div>
+      </div>
+
+      <!-- MIDDLE: Place Encrypted Bid -->
+      <div class="card">
+        <h3>Place Bid</h3>
+
+        <div class="row">
+          <div style="flex:1">
+            <div class="muted">Bid Amount (USDC)</div>
+            <input value="250" />
+          </div>
+          <div style="width:160px">
+            <div class="muted">Max Spend</div>
+            <input value="300" />
+          </div>
+        </div>
+
+        <div class="row">
+          <a class="btn" href="javascript:void(0)">Submit Encrypted Bid</a>
+        </div>
+
+        <div class="kpi">
+          <div class="box">
+            <b>What’s Encrypted</b>
+            <span>Bid value + ranking</span>
+          </div>
+          <div class="box">
+            <b>What’s Revealed</b>
+            <span>Winner + clearing price</span>
+          </div>
+        </div>
+
+        <div class="statusline">
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="dot warn"></span>
+            <div>
+              <div style="font-size:12px">Bid sealed locally</div>
+              <div class="mini">client encrypt → chain stores blob</div>
+            </div>
+          </div>
+          <a class="btn secondary" style="width:auto;padding:10px 12px" href="javascript:void(0)">View receipt</a>
+        </div>
+
+        <div class="foot">
+          <strong>Why blind?</strong> No one can react to your bid before close.  
+          <br/>
+          This reduces sniping, collusion, and MEV leakage.
+        </div>
+      </div>
+
+      <!-- RIGHT: Close + Reveal Result -->
+      <div class="card">
+        <h3>Close & Reveal</h3>
+        <div class="row">
+          <span class="tag"><b>Arcium MXE</b> computes privately</span>
+        </div>
+
+        <div class="row">
+          <a class="btn secondary" href="javascript:void(0)">Close Auction (Compute Winner)</a>
+        </div>
+
+        <div class="table">
+          <table>
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>Where</th>
+                <th>Visibility</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Store bids</td>
+                <td>Solana</td>
+                <td><span class="tag"><b>encrypted</b></span></td>
+              </tr>
+              <tr>
+                <td>Sort bids</td>
+                <td>Arcium</td>
+                <td><span class="tag"><b>private</b></span></td>
+              </tr>
+              <tr>
+                <td>Reveal result</td>
+                <td>Solana</td>
+                <td><span class="tag"><b>public</b></span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="statusline">
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="dot"></span>
+            <div>
+              <div style="font-size:12px">Result (mock)</div>
+              <div class="mini">winner: 3d…a9f2 · clearing: 241 USDC</div>
+            </div>
+          </div>
+          <span class="mini">tx: 9f…1a2b</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <strong>Note:</strong> This is a UI mock for the MVP. The goal is clarity: encrypted bids in, result out.
+    </div>
+  </div>
+</body>
+</html>
