@@ -94,3 +94,16 @@ Not audited. Not production-ready.
 ---
 
 Built for Arcium RTG.
+
+---
+
+## 🧪 Demo Flow
+
+1. Auction is created.
+2. Users submit encrypted bids.
+3. Encrypted bids are stored as opaque blobs.
+4. Auction closes.
+5. Arcium MXE privately sorts bids.
+6. Winner and clearing price are revealed on-chain.
+
+This demonstrates how confidential execution can enable fair price discovery.
