@@ -107,3 +107,9 @@ Built for Arcium RTG.
 6. Winner and clearing price are revealed on-chain.
 
 This demonstrates how confidential execution can enable fair price discovery.
+
+---
+
+## 🖥 Dashboard Mock
+
+A simple UI mock is included at: `app/index.html`
