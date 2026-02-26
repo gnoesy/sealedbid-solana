@@ -53,7 +53,7 @@ Confidential Layer (Arcium MXE):
 - Clearing price calculation
 
 Arcium acts as the confidential execution environment.
-![SealedBid Architecture](architecture.png)
+![SealedBid Architecture](architecturev2.png)
 
 ---
 
