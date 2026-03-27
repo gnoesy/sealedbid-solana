@@ -1,5 +1,8 @@
 # SealedBid (Solana + Arcium)
 
+**Program ID (devnet):** `F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j`
+[View on Explorer](https://explorer.solana.com/address/F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j?cluster=devnet)
+
 SealedBid is a minimal blind auction prototype built on Solana.
 
 Traditional on-chain auctions expose bids in real time, enabling reactive bidding, collusion, and MEV extraction.

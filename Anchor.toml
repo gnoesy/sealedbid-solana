@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-sealedbid = "9fL8mhXHyZZWNGXNUY8LzcnZQtaUkTSJ8Sw6xfLJcCVu"
+sealedbid = "F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j"
 
 [programs.devnet]
-sealedbid = "9fL8mhXHyZZWNGXNUY8LzcnZQtaUkTSJ8Sw6xfLJcCVu"
+sealedbid = "F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j"
 
 [registry]
 url = "https://api.apr.dev"

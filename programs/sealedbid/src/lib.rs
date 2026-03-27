@@ -4,7 +4,7 @@ use arcium_anchor::prelude::*;
 // Sealed bid auction: encrypted bids compared inside Arcium MXE
 const COMP_DEF_OFFSET_COMPARE_BIDS: u32 = comp_def_offset("compare_bids");
 
-declare_id!("9fL8mhXHyZZWNGXNUY8LzcnZQtaUkTSJ8Sw6xfLJcCVu");
+declare_id!("F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j");
 
 #[arcium_program]
 pub mod sealedbid {
