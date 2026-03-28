@@ -17,7 +17,7 @@ import { randomBytes } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 
-const REFERENCE_PROGRAM_ID = "AmzMmGcKUqMWf57WPXhHBkE9QzrbXCc1emFK6hsVJTj7"; // encrypted-defi-mxe
+const REFERENCE_PROGRAM_ID = "F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j"; // sealedbid on devnet
 const RPC_URL = "https://api.devnet.solana.com";
 
 function log(event: string, data: Record<string, unknown> = {}) {
