@@ -1,91 +1,255 @@
 /**
  * sealedbid-solana demo
- * Simulates a sealed-bid auction via Arcium MXE
- *
- * Flow:
- *   1. Auctioneer creates auction on-chain (item + reserve price)
- *   2. Bidders submit encrypted bids (x25519-RescueCipher)
- *   3. After bidding closes, MXE sorts bids privately
- *   4. Winner + clearing price revealed — losing bids never exposed
- *
- * Usage:
- *   ANCHOR_WALLET=~/.config/solana/devnet.json \
- *   npx ts-node --transpile-only scripts/run_demo.ts
+ * Sealed-bid comparison via Arcium MXE.
  */
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import * as anchor from "@coral-xyz/anchor";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
+import * as path from "path";
+import {
+  awaitComputationFinalization,
+  getArciumEnv,
+  getClockAccAddress,
+  getCompDefAccOffset,
+  getClusterAccAddress,
+  getCompDefAccAddress,
+  getComputationAccAddress,
+  getExecutingPoolAccAddress,
+  getFeePoolAccAddress,
+  getMXEAccAddress,
+  getMempoolAccAddress,
+  RescueCipher,
+  deserializeLE,
+  getMXEPublicKey,
+  x25519,
+} from "@arcium-hq/client";
 
-const REFERENCE_PROGRAM_ID = "F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j"; // sealedbid on devnet
-const RPC_URL = "https://api.devnet.solana.com";
+const PROGRAM_ID = new PublicKey("F7Ug6n79uv4reSjRFgwjH2MqoHhEuX7gEJHnTuqphN9j");
+const SIGN_PDA_SEED = Buffer.from("ArciumSignerAccount");
+const EVIDENCE_LOG = path.join(__dirname, "../evidence/mxe_runs.jsonl");
 
 function log(event: string, data: Record<string, unknown> = {}) {
-  console.log(JSON.stringify({ event, ...data, ts: new Date().toISOString() }));
+  const line = JSON.stringify({ event, ...data, ts: new Date().toISOString() });
+  fs.mkdirSync(path.dirname(EVIDENCE_LOG), { recursive: true });
+  fs.appendFileSync(EVIDENCE_LOG, line + "\n");
+  console.log(line);
+}
+
+async function withRpcRetry<T>(fn: () => Promise<T>, retries = 8): Promise<T> {
+  let delayMs = 500;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      if (attempt >= retries || !message.includes("429")) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs *= 2;
+    }
+  }
+}
+
+async function confirmSignatureByPolling(
+  connection: anchor.web3.Connection,
+  signature: string,
+  lastValidBlockHeight: number,
+  commitment: anchor.web3.Commitment,
+): Promise<void> {
+  for (;;) {
+    const [{ value: statuses }, currentBlockHeight] = await Promise.all([
+      withRpcRetry(() => connection.getSignatureStatuses([signature])),
+      withRpcRetry(() => connection.getBlockHeight(commitment)),
+    ]);
+
+    const status = statuses[0];
+    if (status?.err) {
+      throw new Error(`Signature ${signature} failed: ${JSON.stringify(status.err)}`);
+    }
+    if (
+      status &&
+      (status.confirmationStatus === "confirmed" ||
+        status.confirmationStatus === "finalized")
+    ) {
+      return;
+    }
+    if (currentBlockHeight > lastValidBlockHeight) {
+      throw new Error(`Signature ${signature} has expired: block height exceeded.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+}
+
+async function sendAndConfirmCompat(
+  provider: anchor.AnchorProvider,
+  tx: anchor.web3.Transaction,
+  signers: anchor.web3.Signer[] = [],
+  opts: anchor.web3.ConfirmOptions = {},
+): Promise<string> {
+  const commitment = opts.commitment || opts.preflightCommitment || "confirmed";
+  const latest = await withRpcRetry(() =>
+    provider.connection.getLatestBlockhash({ commitment }),
+  );
+
+  tx.feePayer ||= provider.publicKey;
+  tx.recentBlockhash ||= latest.blockhash;
+  tx.lastValidBlockHeight ||= latest.lastValidBlockHeight;
+
+  if (signers.length > 0) {
+    tx.partialSign(...signers);
+  }
+
+  const signed = await provider.wallet.signTransaction(tx);
+  const sig = await withRpcRetry(() =>
+    provider.connection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: opts.skipPreflight,
+      preflightCommitment: opts.preflightCommitment || commitment,
+      maxRetries: opts.maxRetries,
+    }),
+  );
+
+  await withRpcRetry(() =>
+    confirmSignatureByPolling(
+      provider.connection,
+      sig,
+      tx.lastValidBlockHeight!,
+      commitment,
+    ),
+  );
+
+  return sig;
+}
+
+async function getMxePublicKeyWithRetry(
+  provider: anchor.AnchorProvider,
+  programId: PublicKey,
+  retries = 8,
+  delayMs = 1000,
+): Promise<Uint8Array> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const key = await getMXEPublicKey(provider, programId);
+    if (key) {
+      return key;
+    }
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error(`MXE public key unavailable for program ${programId.toString()}`);
 }
 
 async function main() {
+  process.env.ARCIUM_CLUSTER_OFFSET = "456";
+
   const walletPath = process.env.ANCHOR_WALLET || `${os.homedir()}/.config/solana/devnet.json`;
-  const conn = new Connection(RPC_URL, "confirmed");
-  const owner = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync(walletPath).toString()))
+  const conn = new anchor.web3.Connection(
+    process.env.ANCHOR_PROVIDER_URL || process.env.RPC_URL || "https://api.devnet.solana.com",
+    {
+      commitment: "confirmed",
+      wsEndpoint: process.env.WS_RPC_URL,
+    },
   );
+  const owner = Keypair.fromSecretKey(
+    new Uint8Array(JSON.parse(fs.readFileSync(walletPath).toString())),
+  );
+  const provider = new anchor.AnchorProvider(conn, new anchor.Wallet(owner), {
+    commitment: "confirmed",
+    skipPreflight: true,
+  });
+  provider.sendAndConfirm = (
+    tx: anchor.web3.Transaction,
+    signers?: anchor.web3.Signer[],
+    opts?: anchor.web3.ConfirmOptions,
+  ) => sendAndConfirmCompat(provider, tx, signers || [], opts || {});
+  anchor.setProvider(provider);
+
+  const idl = JSON.parse(fs.readFileSync(path.join(__dirname, "../target/idl/sealedbid.json"), "utf-8"));
+  const program = new anchor.Program(idl, provider) as anchor.Program<any>;
+  const arciumEnv = getArciumEnv();
+  const signPdaAccount = PublicKey.findProgramAddressSync([SIGN_PDA_SEED], PROGRAM_ID)[0];
 
   log("demo_start", {
-    description: "Sealed-bid auction — encrypted bids sorted privately in Arcium MXE",
+    program: PROGRAM_ID.toString(),
     wallet: owner.publicKey.toString(),
+    description: "Encrypted sealed-bid comparison via MXE",
   });
 
-  // Auction parameters
-  const auction = {
-    id: Date.now(),
-    item: "Rare NFT — devnet demo",
-    reserve_price_sol: 0.1,
-    bidding_ends_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-  };
-  log("auction_created", auction);
+  const privateKey = x25519.utils.randomSecretKey();
+  const publicKey = x25519.getPublicKey(privateKey);
+  const mxePublicKey = await getMxePublicKeyWithRetry(provider, PROGRAM_ID);
 
-  // Simulate bidders
-  const bids = [
-    { bidder: "Bidder A", amount_sol: 0.15, encrypted: true },
-    { bidder: "Bidder B", amount_sol: 0.22, encrypted: true },
-    { bidder: "Bidder C", amount_sol: 0.18, encrypted: true },
-  ];
+  const bid1 = BigInt(Math.floor(Math.random() * 100) + 50);
+  const bid2 = BigInt(Math.floor(Math.random() * 100) + 50);
+  log("bids_prepared", {
+    bid1: "encrypted",
+    bid2: "encrypted",
+    note: `Local sample bids prepared for private comparison (${bid1.toString()}, ${bid2.toString()})`,
+  });
 
-  for (const bid of bids) {
-    const ciphertext = randomBytes(32).toString("hex");
-    log("bid_submitted", {
-      bidder: bid.bidder,
-      amount: "encrypted",
-      ciphertext: ciphertext.slice(0, 16) + "...",
-      note: "Actual amount hidden until auction closes",
+  const nonce = randomBytes(16);
+  const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
+  const cipher = new RescueCipher(sharedSecret);
+  const ciphertext = cipher.encrypt([bid1, bid2], nonce);
+
+  const computationOffset = new anchor.BN(randomBytes(8), "hex");
+  const clusterOffset = arciumEnv.arciumClusterOffset;
+
+  try {
+    const sig = await program.methods
+      .compareBids(
+        computationOffset,
+        Array.from(ciphertext[0]),
+        Array.from(ciphertext[1]),
+        Array.from(publicKey),
+        new anchor.BN(deserializeLE(nonce).toString()),
+      )
+      .accountsPartial({
+        payer: owner.publicKey,
+        signPdaAccount,
+        mxeAccount: getMXEAccAddress(PROGRAM_ID),
+        mempoolAccount: getMempoolAccAddress(clusterOffset),
+        executingPool: getExecutingPoolAccAddress(clusterOffset),
+        computationAccount: getComputationAccAddress(clusterOffset, computationOffset),
+        compDefAccount: getCompDefAccAddress(
+          PROGRAM_ID,
+          Buffer.from(getCompDefAccOffset("compare_bids")).readUInt32LE(),
+        ),
+        clusterAccount: getClusterAccAddress(clusterOffset),
+        poolAccount: getFeePoolAccAddress(),
+        clockAccount: getClockAccAddress(),
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+
+    log("compare_bids_queued", {
+      sig,
+      explorer: `https://explorer.solana.com/tx/${sig}?cluster=devnet`,
     });
-    await new Promise(r => setTimeout(r, 200));
+
+    const finalizeSig = await Promise.race([
+      awaitComputationFinalization(provider, computationOffset, PROGRAM_ID, "confirmed"),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 90_000)),
+    ]);
+
+    log("compare_bids_success", {
+      queueSig: sig,
+      finalizeSig,
+      clusterOffset,
+    });
+  } catch (e: any) {
+    log("compare_bids_fail", {
+      message: e.message || String(e),
+      logs: e.logs || [],
+      code: e.code,
+      raw: (() => { try { return JSON.stringify(e); } catch { return String(e); } })(),
+    });
+    process.exit(1);
   }
-
-  // Verify reference program (encrypted-defi-mxe handles order matching)
-  const programInfo = await conn.getAccountInfo(new PublicKey(REFERENCE_PROGRAM_ID));
-  log("program_check", {
-    program: REFERENCE_PROGRAM_ID,
-    active: programInfo !== null,
-    note: "encrypted-defi-mxe active — handles private order/bid matching",
-  });
-
-  log("auction_closed", {
-    total_bids: bids.length,
-    winner: "determined by MXE (not revealed in demo)",
-    clearing_price: "encrypted — only winner learns their win",
-    losing_bids: "never revealed to anyone",
-  });
-
-  log("demo_complete", {
-    key_property: "All losing bids remain permanently confidential",
-    mxe_program: `https://explorer.solana.com/address/${REFERENCE_PROGRAM_ID}?cluster=devnet`,
-    full_implementation: "https://github.com/gnoesy/encrypted-defi-mxe",
-  });
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error(JSON.stringify({ event: "fatal", message: e.message }));
   process.exit(1);
 });
