@@ -41,6 +41,25 @@ Instead of exposing bids publicly:
 - Highest valid bid is determined confidentially
 - Only winner and clearing price are revealed
 
+## What The App Does
+
+- Creates a sealed-bid auction on Solana devnet
+- Accepts encrypted bids instead of public bid values
+- Uses Arcium MXE to compare bids privately
+- Reveals only the final winner and clearing price onchain
+
+## What Stays Private
+
+- Individual bid amounts
+- Bid ordering before reveal
+- Intermediate winner computation
+
+## What Is Onchain
+
+- Auction creation
+- Encrypted bid payloads
+- Final winner and clearing price
+
 ---
 
 ## 🏗 Architecture Overview
@@ -123,3 +142,9 @@ A simple UI mock is included at: `app/index.html`
 ## Wallet
 
 `4Y8R73V9QpmL2oUtS4LrwdZk3LrPRCLp7KGg2npPkB1u`
+
+## Devnet Status
+
+- Network: Solana devnet
+- Arcium MXE cluster offset: 456
+- Current role: meaningful encrypted-compute pipeline with automated queue/finalize monitoring
